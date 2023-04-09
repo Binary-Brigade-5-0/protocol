@@ -2,7 +2,6 @@ pub mod message;
 
 use crate::Register;
 use message::Message;
-use tokio::task::spawn_blocking;
 
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -23,12 +22,12 @@ async fn broadcast_message(
         .clients()
         .iter()
         .filter(|(k, _)| k != &&my_id)
-        .try_for_each(|(_, s)| s.send(message.clone()))
+        .try_for_each(|(_, s)| s.0.send(message.clone()))
 }
 
-fn handle_server_post(content: String, register: Register, sockid: Uuid) -> Message {
+async fn handle_server_post(content: String, register: Register, sockid: Uuid) -> Message {
     let postid = Uuid::new_v4();
-    register.blocking_lock().add_post(postid, sockid);
+    register.lock().await.add_post(postid, sockid);
 
     Message {
         kind: message::Kind::Response,
@@ -37,43 +36,52 @@ fn handle_server_post(content: String, register: Register, sockid: Uuid) -> Mess
     }
 }
 
-fn handle_ok(content: String, register: Register) -> Message {
+async fn handle_ok(content: String, register: Register) -> Message {
     todo!()
 }
 
-fn handle_err(content: String, register: Register) -> Message {
+async fn handle_err(content: String, register: Register) -> Message {
     todo!()
 }
 
-fn handle_server_request(postid: Uuid, register: Register) -> Message {
+async fn handle_server_request(postid: Uuid, register: Register) -> Message {
     if postid == Uuid::nil() {
         let mut mvec = vec![];
-        let reglock = register.blocking_lock();
+        let mut reglock = register.lock().await;
 
         reglock
             .posts()
             .iter()
-            .for_each(|(pid, set)| set.iter().for_each(|sid| mvec.push((pid, sid))));
+            .for_each(|(pid, set)| set.iter().for_each(|sid| mvec.push((*pid, *sid))));
 
-        let clients = reglock.clients();
+        let clients = &mut reglock.clients;
 
-        mvec.iter().for_each(|(pid, sid)| {
-            clients.get(sid).unwrap().send(Message {
+        for (pid, sid) in mvec.iter_mut() {
+            let mut client = clients.get_mut(sid).unwrap();
+            client.0.send(Message {
                 kind: message::Kind::Request,
                 time: SystemTime::now().into(),
                 message: pid.to_string(),
             });
-        })
+
+            let response = client.1.recv().await;
+            println!("{:?}", response);
+        }
     }
-    todo!()
+
+    Message {
+        kind: message::Kind::Ok,
+        time: SystemTime::now().into(),
+        message: "asd".to_string(),
+    }
 }
 
-fn handle_client_response(content: String) -> Message {
+async fn handle_client_response(content: String) -> Message {
     todo!()
 }
 
 #[allow(clippy::unit_arg)]
-fn handle_message(
+async fn handle_message(
     Message {
         kind,
         time,
@@ -84,16 +92,16 @@ fn handle_message(
 ) -> anyhow::Result<Message> {
     use message::Kind;
 
-    if SystemTime::now().duration_since(time.into()).is_err() {
-        return Err(anyhow::anyhow!("invalid message timestamp on message"));
-    }
+    // if SystemTime::now().duration_since(time.into()).is_err() {
+    //     return Err(anyhow::anyhow!("invalid message timestamp on message"));
+    // }
 
     match kind {
-        Kind::Post => Ok(handle_server_post(message, register, sockid)),
-        Kind::Ok => Ok(handle_ok(message, register)),
-        Kind::Err => Ok(handle_err(message, register)),
-        Kind::Request => Ok(handle_server_request(Uuid::from_str(&message)?, register)),
-        Kind::Response => Ok(handle_client_response(message)),
+        Kind::Post => Ok(handle_server_post(message, register, sockid).await),
+        Kind::Ok => Ok(handle_ok(message, register).await),
+        Kind::Err => Ok(handle_err(message, register).await),
+        Kind::Request => Ok(handle_server_request(Uuid::from_str(&message)?, register).await),
+        Kind::Response => Ok(handle_client_response(message).await),
 
         e => Err(anyhow::anyhow!("invalid client side message: {:?}", e)),
     }
@@ -106,6 +114,7 @@ pub async fn stream_handler(stream: TcpStream, addr: SocketAddr, sockid: Uuid, r
     let mut buffer = String::new();
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx_inner, rx_inner) = tokio::sync::mpsc::unbounded_channel();
 
     let message = Message {
         message: sockid.to_string(),
@@ -118,7 +127,10 @@ pub async fn stream_handler(stream: TcpStream, addr: SocketAddr, sockid: Uuid, r
         .await;
 
     {
-        register.lock().await.add_client(sockid, tx.clone());
+        register
+            .lock()
+            .await
+            .add_client(sockid, tx.clone(), rx_inner);
     }
 
     loop {
@@ -140,21 +152,25 @@ pub async fn stream_handler(stream: TcpStream, addr: SocketAddr, sockid: Uuid, r
                         Ok(m) => m,
                     };
 
-                    if let Err(e) = handle_message(msg, Arc::clone(&register), sockid) {
-                        tx.send(message::MessageBuilder::default()
-                            .message(e.to_string())
-                            .kind(message::Kind::Err)
-                            .time(SystemTime::now().into())
-                            .build()
-                            .unwrap());
+                    if let message::Kind::Response = &msg.kind {
+                        tx_inner.send(msg);
+                    } else {
+                        let _register = Arc::clone(&register);
+                        match handle_message(msg, _register, sockid).await {
+                            Err(e) => tx.send(Message {
+                                kind: message::Kind::Err,
+                                time: SystemTime::now().into(),
+                                message: e.to_string()
+                            }),
+                            Ok(m) => tx.send(m),
+                        };
                     }
 
-                    if let Err(e) = broadcast_message(sockid, message::MessageBuilder::default()
-                        .message(buffer.clone())
-                        .kind(message::Kind::Post)
-                        .time(SystemTime::now().into())
-                        .build()
-                        .unwrap(), Arc::clone(&register)).await
+                    if let Err(e) = broadcast_message(sockid, Message {
+                        message: buffer.clone(),
+                        kind: message::Kind::Post,
+                        time: SystemTime::now().into(),
+                    }, Arc::clone(&register)).await
                     {
                         eprintln!("{:?}", e);
                     };

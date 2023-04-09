@@ -26,7 +26,7 @@ use uuid::Uuid;
 pub type Rx = UnboundedReceiver<Message>;
 pub type Tx = UnboundedSender<Message>;
 
-type ClientRegister = HashMap<Uuid, Tx>;
+type ClientRegister = HashMap<Uuid, (Tx, Rx)>;
 type PostsRegister = HashMap<Uuid, HashSet<Uuid>>;
 
 #[derive(Default)]
@@ -46,8 +46,8 @@ impl Registry {
 }
 
 impl Registry {
-    pub fn add_client(&mut self, cid: Uuid, tx: Tx) {
-        self.clients.insert(cid, tx);
+    pub fn add_client(&mut self, cid: Uuid, tx: Tx, rx: Rx) {
+        self.clients.insert(cid, (tx, rx));
     }
 
     pub fn remove_client(&mut self, client_id: Uuid) {
