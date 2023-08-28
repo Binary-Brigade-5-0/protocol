@@ -1,4 +1,7 @@
-use crate::broker::Channels;
+use crate::{
+    broker::Channels,
+    message::{MailBox, Message, Receiver},
+};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
     net::{
@@ -25,6 +28,8 @@ pub struct ClientHandle {
 
     reader: BufReader<OwnedReadHalf>,
     writer: BufWriter<OwnedWriteHalf>,
+
+    mailbox: MailBox<Receiver>,
 }
 
 impl ClientHandle {
@@ -37,6 +42,8 @@ impl ClientHandle {
             id: Uuid::new_v4(),
             reader,
             writer,
+
+            mailbox: MailBox::instance(),
         }
     }
 
@@ -65,7 +72,11 @@ impl ClientHandle {
                     self.writer.write_all(&broadcast).await;
                     self.writer.flush().await;
                 },
-                Err(e) => tracing::warn!(broadcast_recv_error=%e, "failed receiving broadcast"),
+                Err(e) => tracing::warn!(broadcast_recv_error=%e),
+            },
+            Some(message) = self.mailbox.recv(self.id) => {
+                self.writer.write_all(&message).await;
+                self.writer.flush().await;
             },
             }
         }
@@ -77,7 +88,7 @@ impl ClientHandle {
     async fn read_msg(
         reader: &mut BufReader<OwnedReadHalf>,
         buffer: &mut Vec<u8>,
-    ) -> Result<Box<[u8]>, MessageError> {
+    ) -> Result<Message, MessageError> {
         match reader.read_until(b'\n', buffer).await {
             Ok(00) => Err(MessageError::Disconnected),
             Err(e) => Err(MessageError::IOError(e)),
