@@ -5,25 +5,17 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[[bin]]
-name = "server"
-path = "src/bin/server.rs"
-
-[[bin]]
-name = "client"
-path = "src/bin/client.rs"
-
 [dependencies]
 anyhow = "1.0.70"
 bincode = "1.3.3"
-bson = { version = "2.6.1", features = ["serde_with", "chrono-0_4", "uuid-1"] }
 chrono = { version = "0.4.24", features = ["serde"] }
+dashmap = { version = "5.5.1", features = ["inline"] }
 derive_builder = { version = "0.12.0", features = ["clippy"] }
 lazy_static = "1.4.0"
-mongodb = { version = "2.4.0", features = ["log", "tokio-sync", "tracing"] }
-openssl = "0.10.49"
 serde = { version = "1.0.159", features = ["derive"] }
 serde_json = "1.0.95"
 thiserror = "1.0.40"
 tokio = { version = "1.27.0", features = ["full"] }
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 uuid = { version = "1.3.0", features = ["v4", "serde"] }
