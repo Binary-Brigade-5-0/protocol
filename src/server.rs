@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::{
     broker::{Channels, MsgService},
     client::ClientHandle,
-    message::ServerMsg,
+    message::model::server::Message,
 };
 
 #[allow(dead_code)]
@@ -18,7 +18,7 @@ pub struct Server {
     listener: TcpListener,
     client_handles: HashMap<Uuid, JoinHandle<std::io::Result<()>>>,
     channels: Channels,
-    msg_tx: mpsc::UnboundedSender<ServerMsg>,
+    msg_tx: mpsc::UnboundedSender<Message>,
 }
 
 impl Server {
@@ -54,7 +54,7 @@ impl std::future::Future for Server {
                 tracing::trace!(%client_id, client_addr=%addr);
                 tracing::info!("client {client_id} has connected");
 
-                self.msg_tx.send(ServerMsg::Connected(client_id));
+                self.msg_tx.send(Message::Connected(client_id));
 
                 let task = tokio::spawn(client.handler());
                 self.get_mut().client_handles.insert(client_id, task);
@@ -70,7 +70,7 @@ impl std::future::Future for Server {
                     .filter(|(_, handle)| handle.is_finished())
                 {
                     tracing::debug!(%client, "removing from task handles list");
-                    _self.msg_tx.send(ServerMsg::Disconnected(*client));
+                    _self.msg_tx.send(Message::Disconnected(*client));
                     tokio::pin!(handle);
                     let Poll::Ready(Err(err)) = handle.poll(cx) else {
                         continue;

@@ -1,35 +1,22 @@
+pub mod model;
+
 use std::sync::Arc;
 
 use dashmap::DashMap;
+use model::client::Message;
 use tokio::sync::mpsc::{self, error::SendError};
 use uuid::Uuid;
 
 lazy_static::lazy_static! {
 static ref _RAW_MAILBOX: Arc<MailBoxRaw> = {
-    tracing::debug!("initializing raw mailbox resources...");
-    Arc::new(MailBoxRaw::new())
+    tracing::trace!("initializing raw mailbox resources...");
+    Arc::new(if cfg!(debug_assertions) { MailBoxRaw::new() } else {
+        tracing::debug!("pre-allocating memory to prevent repeated allocations (prevent global locking of dashmap)");
+        MailBoxRaw::with_capacity(1024)
+    })
 };
 }
 
-// #[derive(Clone, Copy)]
-// pub enum Sender {
-//     Admin,
-//     Client(Uuid),
-// }
-
-// #[derive(Builder)]
-// pub struct Message {
-//     sender: Sender,
-//     body: Box<[u8]>,
-// }
-
-pub enum ServerMsg {
-    Connected(Uuid),
-    Disconnected(Uuid),
-    Broadcast(Message),
-}
-
-pub type Message = Box<[u8]>;
 pub trait ReaderType {}
 
 pub struct Receiver;
@@ -50,7 +37,7 @@ pub enum Error {
     #[error("client {0} does not exist")]
     DoesNotExist(Uuid),
 
-    #[error("failed sending message: {0}")]
+    #[error("failed sending message: {0:?}")]
     SenderError(#[from] SendError<Message>),
 }
 
@@ -62,9 +49,16 @@ pub struct MailBox<T: ReaderType> {
 
 impl MailBoxRaw {
     fn new() -> Self {
-        MailBoxRaw {
+        Self {
             rx_map: DashMap::new(),
             tx_map: DashMap::new(),
+        }
+    }
+
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            rx_map: DashMap::with_capacity(capacity),
+            tx_map: DashMap::with_capacity(capacity),
         }
     }
 }
