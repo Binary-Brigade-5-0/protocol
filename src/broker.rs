@@ -67,11 +67,11 @@ impl MsgService {
                     client::MessageBody::Exists(uuid) => {},
                 }
             },
-            Some(message) = self.server_rx.recv() => match message {
-                server::Message::Connected(id)    => {
+            Some(message) = self.server_rx.recv() => { use server::Message; match message {
+                Message::Connected(id)    => {
                     self.mailbox.add_client(id);
                     let message = MessageBuilder::default()
-                        .body(client::MessageBody::Response{ body: id.into_bytes().into(), target: id })
+                        .body(client::MessageBody::Response { body: id.into_bytes().into(), target: id })
                         .time(SystemTime::now())
                         .sender(Uuid::nil())
                         .build()
@@ -79,14 +79,14 @@ impl MsgService {
 
                     self.mailbox.send(id, message).await;
                 },
-                server::Message::Disconnected(id) => {
+                Message::Disconnected(id) => {
                     self.mailbox.remove_client(id).await;
                 },
 
-                server::Message::Broadcast(msg) => {
+                Message::Broadcast(msg) => {
                     self.broadcast_tx.send(msg);
                 }
-            },
+            }},
             }
         }
     }
