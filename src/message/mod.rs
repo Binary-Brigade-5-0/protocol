@@ -1,21 +1,13 @@
 pub mod model;
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use dashmap::DashMap;
 use model::client::Message;
 use tokio::sync::mpsc::{self, error::SendError};
 use uuid::Uuid;
 
-lazy_static::lazy_static! {
-static ref _RAW_MAILBOX: Arc<MailBoxRaw> = {
-    tracing::trace!("initializing raw mailbox resources...");
-    Arc::new(if cfg!(debug_assertions) { MailBoxRaw::new() } else {
-        tracing::debug!("pre-allocating memory to prevent repeated allocations (prevent global locking of dashmap)");
-        MailBoxRaw::with_capacity(1024)
-    })
-};
-}
+static _RAW_MAILBOX: OnceLock<Arc<MailBoxRaw>> = OnceLock::new();
 
 pub trait ReaderType {}
 
@@ -65,12 +57,18 @@ impl MailBoxRaw {
 
 impl<T: ReaderType> MailBox<T> {
     pub fn instance() -> Self {
-        let _inner = Arc::clone(&_RAW_MAILBOX);
+        let _inner_mailbox = _RAW_MAILBOX.get_or_init(|| {
+            tracing::trace!("initializing raw mailbox resources...");
+            Arc::new(if cfg!(debug_assertions) { MailBoxRaw::new() } else {
+                tracing::debug!("pre-allocating memory to prevent repeated allocations (prevent global locking of dashmap)");
+                MailBoxRaw::with_capacity(1024)
+            })
+        });
 
-        Self {
-            _inner,
-            _type: Default::default(),
-        }
+        let _inner = Arc::clone(_inner_mailbox);
+        let _type = Default::default();
+
+        Self { _inner, _type }
     }
 }
 
@@ -100,14 +98,14 @@ impl MailBox<Sender> {
 
     #[tracing::instrument(skip(self))]
     pub async fn remove_client(&self, client_id: Uuid) {
-        if let Some((id, mut rx)) = self._inner.rx_map.remove(&client_id) {
+        if let Some((_, mut rx)) = self._inner.rx_map.remove(&client_id) {
             tracing::debug!("closing mailbox receiver...");
             rx.close();
         } else {
             tracing::warn!("receiver does not exist");
         }
 
-        if let Some((id, tx)) = self._inner.tx_map.remove(&client_id) {
+        if let Some((_, tx)) = self._inner.tx_map.remove(&client_id) {
             tracing::debug!("closing mailbox sender...");
             tx.closed().await;
         }
