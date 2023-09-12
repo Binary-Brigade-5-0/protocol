@@ -89,6 +89,7 @@ impl MailBox<Sender> {
         Ok(())
     }
 
+    #[inline]
     pub fn add_client(&self, client_id: Uuid) {
         let (tx, rx) = mpsc::unbounded_channel();
 

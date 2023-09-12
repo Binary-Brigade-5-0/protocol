@@ -9,10 +9,10 @@ use uuid::Uuid;
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "method", content = "content")]
 pub enum MessageBody {
-    Query(Box<[u8]>),
+    Query(Box<str>),
     Response {
         target: Uuid,
-        body: Box<[u8]>
+        body: Box<str>
     },
     Get(Uuid),
     Exists(Uuid),
@@ -31,10 +31,11 @@ pub struct Message {
 
 impl Message {
     pub fn body_length(&self) -> usize {
-        use MessageBody::*;
-        match &self.body {
-            Query(body) | Response { body, .. } => body.len(),
-            Get(uuid) | Exists(uuid) => 16,
+        use MessageBody as M;
+        if let M::Query(body) | M::Response { body, .. } = &self.body {
+            body.len()
+        } else {
+            16
         }
     }
 
