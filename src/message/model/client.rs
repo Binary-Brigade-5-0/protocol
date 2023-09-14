@@ -12,21 +12,16 @@ impl BuilderState for Full {}
 impl BuilderState for Partial {}
 
 #[non_exhaustive]
-#[rustfmt::skip]
 #[derive(Clone, Debug)]
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "method", content = "content")]
 pub enum MessageBody {
     Query(Box<str>),
-    Response {
-        target: Uuid,
-        body: Box<str>
-    },
+    Response { target: Uuid, body: Box<str> },
     Get(Uuid),
     Exists(Uuid),
 }
 
-#[rustfmt::skip]
 #[derive(Clone, Debug)]
 #[derive(Deserialize, Serialize)]
 pub struct Message {
@@ -64,15 +59,8 @@ impl Message {
             sender: Uuid::nil(),
             time: SystemTime::now(),
             body: None,
-            _state: Default::default(),
-        }
-    }
 
-    pub fn server_message(body: MessageBody) -> Self {
-        Self {
-            sender: Uuid::nil(),
-            time: SystemTime::now().into(),
-            body,
+            _state: Default::default(),
         }
     }
 }
@@ -85,7 +73,14 @@ impl<T: BuilderState> MessageBuilder<T> {
 
     pub fn body(mut self, body: MessageBody) -> MessageBuilder<Full> {
         self.body = Some(body);
-        self.to_full()
+
+        MessageBuilder {
+            sender: self.sender,
+            time: self.time,
+            body: self.body,
+
+            _state: Default::default(),
+        }
     }
 
     pub fn time(&mut self, time: SystemTime) -> &mut Self {
@@ -94,23 +89,13 @@ impl<T: BuilderState> MessageBuilder<T> {
     }
 }
 
-impl<T: BuilderState> MessageBuilder<T> {
-    fn to_full(self) -> MessageBuilder<Full> {
-        MessageBuilder {
-            sender: self.sender,
-            time: self.time,
-            body: self.body,
-            _state: Default::default(),
-        }
-    }
-}
-
 impl MessageBuilder<Full> {
     pub fn build(self) -> Message {
         Message {
-            sender: self.sender,
             time: self.time.into(),
             body: self.body.unwrap(),
+
+            sender: self.sender,
         }
     }
 }
