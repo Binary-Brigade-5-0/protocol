@@ -1,6 +1,5 @@
-use std::time::Duration;
-
 use axum::extract::ws::{self, WebSocket};
+use derive_builder::Builder;
 use futures::{stream::SplitStream, StreamExt};
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -10,31 +9,16 @@ use crate::message::{
     MailBox, Receiver,
 };
 
-#[allow(unused)]
-static HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1800);
-
 #[cfg_attr(debug_assertions, allow(dead_code))]
+#[derive(Builder)]
+#[builder(pattern = "owned")]
 pub struct ReaderHalf {
     id: Uuid,
     stream: SplitStream<WebSocket>,
-    mailbox: MailBox<Receiver>,
     tx: mpsc::UnboundedSender<Message>,
-}
 
-impl ReaderHalf {
-    pub fn new(
-        id: Uuid,
-        stream: SplitStream<WebSocket>,
-        tx: mpsc::UnboundedSender<Message>,
-    ) -> Self {
-        Self {
-            mailbox: MailBox::instance(),
-
-            stream,
-            id,
-            tx,
-        }
-    }
+    #[builder(setter(skip), default = "crate::message::MailBox::instance()")]
+    mailbox: MailBox<Receiver>,
 }
 
 impl ReaderHalf {
