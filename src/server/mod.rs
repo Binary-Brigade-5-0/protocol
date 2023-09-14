@@ -47,8 +47,8 @@ impl Server {
                         tracing::error!(mailbox_sender_error=%e);
                     },
 
-                    MessageBody::Get(_uuid) => {}
-                    MessageBody::Exists(_uuid) => {}
+                    MessageBody::Get(_uuid) => {},
+                    MessageBody::Exists(_uuid) => {},
                 }
             }
         }
@@ -72,7 +72,7 @@ impl Server {
         let (mut rhalf, whalf) = client.create_handles();
         let _ = rhalf.send(mesg);
 
-        tokio::spawn(rhalf.spawn_handler());
+        tokio::spawn(rhalf.spawn_reader());
         tokio::spawn(whalf.spawn_writer());
     }
 }
