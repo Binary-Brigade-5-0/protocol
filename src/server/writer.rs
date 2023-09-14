@@ -23,12 +23,15 @@ impl WriterHalf {
 }
 
 impl WriterHalf {
-    pub async fn spawn_handler(mut self) -> anyhow::Result<()> {
+    pub async fn spawn_writer(mut self) -> anyhow::Result<()> {
         loop {
             if let Some(result) = self.rx.recv().await {
                 let bytes = serde_json::to_string(&result).unwrap();
-                self.sink.send(Message::Text(bytes.clone())).await?;
                 tracing::info!(message_length = bytes.len(), "message={bytes:x?}");
+
+                if let Err(err) = self.sink.send(Message::Text(bytes.clone())).await {
+                    tracing::warn!(socket_sender_error=%err);
+                }
             };
         }
     }

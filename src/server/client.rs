@@ -1,8 +1,5 @@
 use axum::extract::ws::{Message, WebSocket};
-use futures::{
-    stream::{SplitSink, SplitStream},
-    SinkExt,
-};
+use futures::stream::{SplitSink, SplitStream};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -20,17 +17,13 @@ impl Client {
         Self { id, reader, writer }
     }
 
-    pub fn create_handles<'a>(self) -> (ReaderHalf<'a>, WriterHalf) {
+    pub fn create_handles(self) -> (ReaderHalf, WriterHalf) {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let rhalf = ReaderHalf::new(self.id, self.reader, tx);
         let whalf = WriterHalf::new(self.id, self.writer, rx);
 
         (rhalf, whalf)
-    }
-
-    pub async fn send(&mut self, mesg: Message) -> Result<(), axum::Error> {
-        self.writer.send(mesg).await
     }
 
     pub fn id(&self) -> Uuid {

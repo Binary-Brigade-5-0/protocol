@@ -3,7 +3,7 @@ pub mod server;
 
 use axum::{extract::WebSocketUpgrade, response::Response, routing, Json, Router};
 use chrono::{DateTime, Utc};
-use server::spawn_client;
+use server::Server;
 use std::{net::SocketAddr, sync::OnceLock, time::SystemTime};
 use tracing_subscriber::{fmt::format::FmtSpan, EnvFilter};
 
@@ -28,7 +28,7 @@ async fn checkhealth() -> Json<serde_json::Value> {
 }
 
 async fn socket_handler(websocket: WebSocketUpgrade) -> Response {
-    websocket.on_upgrade(spawn_client)
+    websocket.on_upgrade(Server::spawn_client)
 }
 
 #[tokio::main]

@@ -1,7 +1,15 @@
+use std::time::SystemTime;
+
 use chrono::{DateTime, Utc};
-use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+pub trait BuilderState {}
+pub struct Full;
+pub struct Partial;
+
+impl BuilderState for Full {}
+impl BuilderState for Partial {}
 
 #[non_exhaustive]
 #[rustfmt::skip]
@@ -19,27 +27,90 @@ pub enum MessageBody {
 }
 
 #[rustfmt::skip]
-#[derive(Builder, Clone, Debug)]
+#[derive(Clone, Debug)]
 #[derive(Deserialize, Serialize)]
 pub struct Message {
     sender: Uuid,
 
-    #[builder(setter(into), default = "::std::time::SystemTime::now().into()")]
     time: DateTime<Utc>,
     body: MessageBody,
 }
 
+pub struct MessageBuilder<T: BuilderState> {
+    sender: Uuid,
+    time: SystemTime,
+    body: Option<MessageBody>,
+
+    _state: std::marker::PhantomData<T>,
+}
+
 impl Message {
-    pub fn body_length(&self) -> usize {
-        use MessageBody as M;
-        if let M::Query(body) | M::Response { body, .. } = &self.body {
-            body.len()
-        } else {
-            16
+    pub fn body(&self) -> &MessageBody {
+        &self.body
+    }
+
+    pub fn sender(&self) -> &Uuid {
+        &self.sender
+    }
+
+    pub fn time(&self) -> SystemTime {
+        self.time.into()
+    }
+}
+
+impl Message {
+    pub fn builder() -> MessageBuilder<Partial> {
+        MessageBuilder {
+            sender: Uuid::nil(),
+            time: SystemTime::now(),
+            body: None,
+            _state: Default::default(),
         }
     }
 
-    pub fn body(&self) -> &MessageBody {
-        &self.body
+    pub fn server_message(body: MessageBody) -> Self {
+        Self {
+            sender: Uuid::nil(),
+            time: SystemTime::now().into(),
+            body,
+        }
+    }
+}
+
+impl<T: BuilderState> MessageBuilder<T> {
+    pub fn sender(&mut self, uuid: Uuid) -> &mut Self {
+        self.sender = uuid;
+        self
+    }
+
+    pub fn body(mut self, body: MessageBody) -> MessageBuilder<Full> {
+        self.body = Some(body);
+        self.to_full()
+    }
+
+    pub fn time(&mut self, time: SystemTime) -> &mut Self {
+        self.time = time;
+        self
+    }
+}
+
+impl<T: BuilderState> MessageBuilder<T> {
+    fn to_full(self) -> MessageBuilder<Full> {
+        MessageBuilder {
+            sender: self.sender,
+            time: self.time,
+            body: self.body,
+            _state: Default::default(),
+        }
+    }
+}
+
+impl MessageBuilder<Full> {
+    pub fn build(self) -> Message {
+        Message {
+            sender: self.sender,
+            time: self.time.into(),
+            body: self.body.unwrap(),
+        }
     }
 }
