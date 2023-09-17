@@ -17,17 +17,22 @@ pub struct WriterHalf {
 
 impl WriterHalf {
     #[tracing::instrument(skip_all, fields(id = self.id.to_string()))]
-    pub async fn spawn_writer(mut self) -> anyhow::Result<()> {
+    pub async fn spawn_writer(mut self) {
         while let Some(result) = self.rx.recv().await {
             let bytes = serde_json::to_string(&result).unwrap();
             tracing::info!(message_length = bytes.len(), "message={bytes:x?}");
 
-            if let Err(err) = self.sink.send(Message::Text(bytes.clone())).await {
+            if let Err(err) = self.write(result).await {
                 tracing::warn!(socket_sender_error=%err);
             }
         }
 
         tracing::info!("closing client writer");
-        Ok(())
+    }
+
+    pub async fn write(&mut self, mesg: client::Message) -> Result<(), axum::Error> {
+        let mesg = serde_json::to_string(&mesg).unwrap();
+        let mesg = Message::Text(mesg);
+        self.sink.send(mesg).await
     }
 }

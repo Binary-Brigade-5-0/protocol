@@ -2,6 +2,8 @@ pub(crate) mod client;
 pub(crate) mod reader;
 pub(crate) mod writer;
 
+use std::sync::Arc;
+
 use axum::extract::ws::WebSocket;
 use futures::StreamExt;
 use tokio::sync::{broadcast, mpsc};
@@ -11,21 +13,50 @@ use crate::message::{
     MailBox, Sender,
 };
 
+use client::Channels;
+
 #[cfg_attr(debug_assertions, allow(dead_code))]
 pub struct Server {
-    mailbox: MailBox<Sender>,
     client_rx: mpsc::UnboundedReceiver<Message>,
     broadcast_tx: broadcast::Sender<Message>,
+    channels: Option<Channels>,
+
+    mailbox: MailBox<Sender>,
+}
+
+#[cfg_attr(debug_assertions, allow(dead_code))]
+pub struct TaskSpawner {
+    channels: Channels,
+    mailbox: MailBox<Sender>,
 }
 
 #[cfg_attr(debug_assertions, allow(dead_code))]
 impl Server {
-    #[rustfmt::skip]
-    pub fn new(client_rx: mpsc::UnboundedReceiver<Message>) -> Self {
+    pub fn new() -> Self {
         let mailbox = MailBox::instance();
-        let (broadcast_tx, ..) = broadcast::channel(128);
+        let (client_tx, client_rx) = mpsc::unbounded_channel();
+        let (broadcast_tx, broadcast_rx) = broadcast::channel(128);
 
-        Self { mailbox, client_rx, broadcast_tx }
+        let channels = Channels::builder()
+            .server_tx(client_tx)
+            .broadcast_rx(broadcast_rx)
+            .build();
+
+        Self {
+            mailbox,
+            client_rx,
+            broadcast_tx,
+            channels: Some(channels),
+        }
+    }
+
+    pub fn task_spawner(&mut self) -> Option<Arc<TaskSpawner>> {
+        let channels = self.channels.take()?;
+        let mailbox = MailBox::instance();
+        let task_spawner = TaskSpawner { channels, mailbox };
+        let task_spawner = Arc::new(task_spawner);
+
+        Some(task_spawner)
     }
 
     pub fn broadcast_receiver(&self) -> broadcast::Receiver<Message> {
@@ -34,7 +65,8 @@ impl Server {
 
     pub async fn spawn_server(mut self) {
         loop {
-            if let Some(mesg) = self.client_rx.recv().await {
+            tokio::select! {
+            Some(mesg) = self.client_rx.recv()  => {
                 tracing::info!(?mesg);
                 match mesg.body() {
                     #[rustfmt::skip]
@@ -50,29 +82,41 @@ impl Server {
                     MessageBody::Get(_uuid) => {},
                     MessageBody::Exists(_uuid) => {},
                 }
+            },
             }
         }
     }
 }
 
-#[cfg_attr(debug_assertions, allow(dead_code))]
-impl Server {
+impl TaskSpawner {
     #[tracing::instrument(skip_all)]
-    pub(crate) async fn spawn_client(websocket: WebSocket) {
-        let (writer, reader) = websocket.split();
-
+    pub async fn spawn_client(self: Arc<Self>, ws: WebSocket) {
+        let channels = self.channels.clone();
+        let (writer, reader) = ws.split();
         let client = client::Client::new(reader, writer);
-        let mesg = Message::builder()
-            .body(MessageBody::Response {
-                target: client.id(),
-                body: "".into(),
-            })
-            .build();
+        let client_id = client.id();
 
-        let (mut rhalf, whalf) = client.create_handles();
-        let _ = rhalf.send(mesg);
+        tracing::info!("client {client_id} connected");
+        self.mailbox.add_client(client_id);
 
-        tokio::spawn(rhalf.spawn_reader());
-        tokio::spawn(whalf.spawn_writer());
+        let mesg = Message::builder().body(MessageBody::Response {
+            target: client_id,
+            body: "".into(),
+        });
+        let mesg = mesg.build();
+
+        let (rhalf, mut whalf) = client.create_handles(channels);
+        let _ = whalf.write(mesg).await;
+
+        let future_1 = tokio::spawn(rhalf.spawn_reader());
+        let future_2 = tokio::spawn(whalf.spawn_writer());
+
+        let (r1, r2) = tokio::join!(future_1, future_2);
+
+        if let Err(err) = r1.and(r2) {
+            tracing::error!(task_join_error=%err);
+        }
+
+        tracing::info!("client {client_id} disconnected");
     }
 }

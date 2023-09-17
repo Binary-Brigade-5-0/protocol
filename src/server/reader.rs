@@ -5,9 +5,11 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::message::{
-    model::client::{self, Message, MessageBody},
+    model::client::{Message, MessageBody},
     MailBox, Receiver,
 };
+
+use super::client::Channels;
 
 #[cfg_attr(debug_assertions, allow(dead_code))]
 #[derive(Builder)]
@@ -15,7 +17,8 @@ use crate::message::{
 pub struct ReaderHalf {
     id: Uuid,
     stream: SplitStream<WebSocket>,
-    tx: mpsc::UnboundedSender<Message>,
+    writer_tx: mpsc::UnboundedSender<Message>,
+    channels: Channels,
 
     #[builder(setter(skip), default = "crate::message::MailBox::instance()")]
     mailbox: MailBox<Receiver>,
@@ -36,7 +39,7 @@ impl ReaderHalf {
                             body: err.to_string().into()
                         }).build());
 
-                        let _ = self.send(message);
+                        let _ = self.channels.send_server(message);
                     },
                     M::Binary(bytes) => {
                         let message = serde_json::from_slice(&bytes);
@@ -45,7 +48,7 @@ impl ReaderHalf {
                             body: err.to_string().into()
                         }).build());
 
-                        let _ = self.send(message);
+                        let _ = self.writer_tx.send(message);
                     },
 
                     _mesg => {},
@@ -54,16 +57,18 @@ impl ReaderHalf {
                 None => break,
             },
             Some(_mesg) = self.mailbox.recv(self.id) => {
-                let _ = self.send(_mesg);
+                let _ = self.writer_tx.send(_mesg);
+            },
+            broadcast = self.channels.get_broadcast() => match broadcast {
+                Ok(mesg) if *mesg.sender() == self.id => tracing::debug!("skipping broadcast from self"),
+                Err(err) => tracing::warn!(broadcast_receive_error=%err),
+                Ok(mesg) => {
+                    let _ = self.writer_tx.send(mesg);
+                }
             },
             }
         }
 
-        tracing::info!("disconnecting from client");
-    }
-
-    #[tracing::instrument(skip(self))]
-    pub fn send(&mut self, mesg: Message) -> Result<(), mpsc::error::SendError<client::Message>> {
-        self.tx.send(mesg)
+        tracing::info!("closing client reader");
     }
 }
