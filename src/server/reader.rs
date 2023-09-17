@@ -48,7 +48,7 @@ impl ReaderHalf {
                             body: err.to_string().into()
                         }).build());
 
-                        let _ = self.writer_tx.send(message);
+                        let _ = self.channels.send_server(message);
                     },
 
                     _mesg => {},
