@@ -86,11 +86,11 @@ B --) C2: repeat broadcast
 C2 --) C2: skip broadcast since mesg.sender == self.id
 
 alt if C1 has content matching required query
-	C1 ->> S: { ..., response, { id, posted, title } }
+    C1 ->> S: { ..., response, { id, posted, title } }
 end
 
 loop collect message until pre-decided timeout
-	S --> S: collect responses for C2
+    S --> S: collect responses for C2
 end
 
 S ->> C2: { ..., response, vec[{ id, posted, title, from }] }
@@ -106,6 +106,8 @@ C2 --) C2: update registry to contain post as long as it exists
 C1 --x S: Disconnected
 C2 --x S: Disconnected
 ```
+
+Then again please read the note below.
 
 
 ## LICENSE
