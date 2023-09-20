@@ -40,6 +40,7 @@ pub struct MailBox<T: ReaderType> {
 }
 
 impl MailBoxRaw {
+    #[inline]
     fn new() -> Self {
         Self {
             rx_map: DashMap::new(),
@@ -47,6 +48,7 @@ impl MailBoxRaw {
         }
     }
 
+    #[inline]
     fn with_capacity(capacity: usize) -> Self {
         Self {
             rx_map: DashMap::with_capacity(capacity),
@@ -73,6 +75,7 @@ impl<T: ReaderType> MailBox<T> {
 }
 
 impl MailBox<Receiver> {
+    #[inline]
     pub async fn recv(&self, client_id: Uuid) -> Option<Message> {
         self._inner.rx_map.get_mut(&client_id)?.recv().await
     }
