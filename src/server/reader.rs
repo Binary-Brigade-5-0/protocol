@@ -12,15 +12,15 @@ use crate::message::{
 use super::client::Channels;
 
 #[cfg_attr(debug_assertions, allow(dead_code))]
-#[derive(Builder)]
-#[builder(pattern = "owned")]
+#[derive(TypedBuilder)]
+// #[builder(pattern = "owned")]
 pub struct ReaderHalf {
     id: Uuid,
     stream: SplitStream<WebSocket>,
     writer_tx: mpsc::UnboundedSender<Message>,
     channels: Channels,
 
-    #[builder(setter(skip), default = "crate::message::MailBox::instance()")]
+    #[builder(setter(skip), default = crate::message::MailBox::instance())]
     mailbox: MailBox<Receiver>,
 }
 

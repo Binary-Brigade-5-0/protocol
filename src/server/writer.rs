@@ -1,14 +1,13 @@
 use axum::extract::ws::{Message, WebSocket};
-use derive_builder::Builder;
 use futures::{stream::SplitSink, SinkExt};
 use tokio::sync::mpsc;
+use typed_builder::TypedBuilder;
 use uuid::Uuid;
 
 use crate::message::model::client;
 
 #[cfg_attr(debug_assertions, allow(dead_code))]
-#[derive(Builder)]
-#[builder(pattern = "owned")]
+#[derive(TypedBuilder)]
 pub struct WriterHalf {
     id: Uuid,
     sink: SplitSink<WebSocket, Message>,

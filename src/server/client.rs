@@ -54,21 +54,15 @@ impl Client {
     pub fn create_handles(self, channels: Channels) -> (ReaderHalf, WriterHalf) {
         let (tx, rx) = mpsc::unbounded_channel();
 
-        let rhalf = ReaderHalfBuilder::default()
+        let rhalf = ReaderHalf::builder()
             .id(self.id)
             .stream(self.reader)
             .channels(channels)
             .writer_tx(tx);
 
-        let whalf = WriterHalfBuilder::default()
-            .id(self.id)
-            .sink(self.writer)
-            .rx(rx);
+        let whalf = WriterHalf::builder().id(self.id).sink(self.writer).rx(rx);
 
-        let rhalf = rhalf.build().unwrap();
-        let whalf = whalf.build().unwrap();
-
-        (rhalf, whalf)
+        (rhalf.build(), whalf.build())
     }
 
     pub fn id(&self) -> Uuid {
