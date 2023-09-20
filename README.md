@@ -108,12 +108,12 @@ C2 --x S: Disconnected
 ```
 
 
-# LICENSE
+## LICENSE
 
 This project is licensed under the GNU GPL V3 License.
 
 
-# NOTE
+## NOTE
 
 At the time this readme was written, the protocol itself is unfinished and needs
 to be fleshed out significantly. The server implementation is supposed to be a
