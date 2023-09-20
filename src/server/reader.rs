@@ -1,7 +1,7 @@
 use axum::extract::ws::{self, WebSocket};
-use derive_builder::Builder;
 use futures::{stream::SplitStream, StreamExt};
 use tokio::sync::mpsc;
+use typed_builder::TypedBuilder;
 use uuid::Uuid;
 
 use crate::message::{
@@ -27,28 +27,31 @@ pub struct ReaderHalf {
 impl ReaderHalf {
     #[tracing::instrument(skip_all, fields(id = self.id.to_string()))]
     pub async fn spawn_reader(mut self) {
+        let message_maker = |maybe_message: serde_json::Result<Message>| -> Message {
+            let make_err = |err: serde_json::Error| MessageBody::Error {
+                criminal: self.id,
+                error: err.to_string().into(),
+            };
+
+            maybe_message.unwrap_or_else(|err| Message::builder().body(make_err(err)).build())
+        };
+
         loop {
             use ws::Message as M;
             tokio::select! {
             ws_mesg = self.stream.next() => match ws_mesg {
                 Some(Ok(ws_mesg)) => match ws_mesg {
                     M::Text(string) => {
-                        let message = serde_json::from_str(&string);
-                        let message = message.unwrap_or_else(|err| Message::builder().body(MessageBody::Response {
-                            target: self.id,
-                            body: err.to_string().into()
-                        }).build());
-
-                        let _ = self.channels.send_server(message);
+                        let message = message_maker(serde_json::from_str(&string));
+                        if let Err(err) = self.channels.send_server(message) {
+                            tracing::error!(channel_error=%err)
+                        }
                     },
                     M::Binary(bytes) => {
-                        let message = serde_json::from_slice(&bytes);
-                        let message = message.unwrap_or_else(|err| Message::builder().body(MessageBody::Response {
-                            target: self.id,
-                            body: err.to_string().into()
-                        }).build());
-
-                        let _ = self.channels.send_server(message);
+                        let message = message_maker(serde_json::from_slice(&bytes));
+                        if let Err(err) = self.channels.send_server(message) {
+                            tracing::error!(channel_error=%err)
+                        }
                     },
 
                     _mesg => {},
@@ -56,14 +59,17 @@ impl ReaderHalf {
                 Some(Err(ws_err)) => { tracing::error!(websocket_error=%ws_err); break },
                 None => break,
             },
-            Some(_mesg) = self.mailbox.recv(self.id) => {
-                let _ = self.writer_tx.send(_mesg);
+
+            Some(mesg) = self.mailbox.recv(self.id) => if let Err(err) = self.writer_tx.send(mesg) {
+                tracing::error!(writer_tx_error=%err);
             },
+
             broadcast = self.channels.get_broadcast() => match broadcast {
-                Ok(mesg) if *mesg.sender() == self.id => tracing::debug!("skipping broadcast from self"),
                 Err(err) => tracing::warn!(broadcast_receive_error=%err),
-                Ok(mesg) => {
-                    let _ = self.writer_tx.send(mesg);
+
+                Ok(mesg) if *mesg.sender() == self.id => tracing::debug!("skipping broadcast from self"),
+                Ok(mesg) => if let Err(err) = self.writer_tx.send(mesg) {
+                    tracing::error!(writer_tx_error=%err);
                 }
             },
             }

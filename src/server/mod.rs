@@ -13,7 +13,7 @@ use crate::message::{
     MailBox, Sender,
 };
 
-use client::Channels;
+use client::{Channels, Client};
 
 #[cfg_attr(debug_assertions, allow(dead_code))]
 pub struct Server {
@@ -30,8 +30,8 @@ pub struct TaskSpawner {
     mailbox: MailBox<Sender>,
 }
 
-#[cfg_attr(debug_assertions, allow(dead_code))]
 impl Server {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let mailbox = MailBox::instance();
         let (client_tx, client_rx) = mpsc::unbounded_channel();
@@ -59,6 +59,7 @@ impl Server {
         Some(task_spawner)
     }
 
+    #[inline]
     pub fn broadcast_receiver(&self) -> broadcast::Receiver<Message> {
         self.broadcast_tx.subscribe()
     }
@@ -69,18 +70,30 @@ impl Server {
             Some(mesg) = self.client_rx.recv()  => {
                 tracing::info!(?mesg);
                 match mesg.body() {
-                    #[rustfmt::skip]
-                    MessageBody::Query(..) => if let Err(e) = self.broadcast_tx.send(mesg) {
-                        tracing::error!(broadcast_sender_err=%e);
+                    MessageBody::Query(..) => if let Err(broadcast_sender_err) = self.broadcast_tx.send(mesg) {
+                        tracing::error!(%broadcast_sender_err);
                     },
 
-                    #[rustfmt::skip]
-                    MessageBody::Response { target, .. } => if let Err(e) = self.mailbox.send(*target, mesg).await {
+                    MessageBody::Post       { target, .. }
+                    | MessageBody::Response { target, .. }
+                    | MessageBody::Get      { target, .. }
+                    => if let Err(e) = self.mailbox.send(*target, mesg).await {
                         tracing::error!(mailbox_sender_error=%e);
                     },
 
-                    MessageBody::Get(_uuid) => {},
-                    MessageBody::Exists(_uuid) => {},
+                    mbody @ MessageBody::Error { criminal, .. } if mesg.sender().is_nil() => {
+                        let mesg = Message::builder().body(mbody.clone()).build();
+                        let _ = self.mailbox.send(*criminal, mesg).await;
+                    },
+
+                    _ => {
+                        tracing::warn!("un-supported client side message: {mesg:?}");
+                        let error = Message::builder()
+                            .body(MessageBody::Error { criminal: *mesg.sender(), error: "un-supported client side message".into() })
+                            .build();
+
+                        let _ = self.mailbox.send(*mesg.sender(), error).await;
+                    }
                 }
             },
             }

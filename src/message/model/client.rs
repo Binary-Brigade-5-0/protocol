@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::{Post, PostHeader as Pheader};
+
 pub trait BuilderState {}
 pub struct Full;
 pub struct Partial;
@@ -14,20 +16,24 @@ impl BuilderState for Partial {}
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 #[derive(Deserialize, Serialize)]
-#[serde(tag = "method", content = "content")]
+#[serde(tag = "method", content = "body")]
 pub enum MessageBody {
     Query(Box<str>),
-    Response { target: Uuid, body: Box<str> },
-    Get(Uuid),
-    Exists(Uuid),
+    Connected(Uuid),
+
+    Error { criminal: Uuid, error: Box<str> },
+    Response { target: Uuid, posts: Vec<Pheader> },
+    Post { target: Uuid, post: Post },
+    Get { target: Uuid, id: Uuid },
 }
 
 #[derive(Clone, Debug)]
 #[derive(Deserialize, Serialize)]
 pub struct Message {
     sender: Uuid,
-
     time: DateTime<Utc>,
+
+    #[serde(flatten)]
     body: MessageBody,
 }
 
@@ -71,13 +77,13 @@ impl<T: BuilderState> MessageBuilder<T> {
         self
     }
 
-    pub fn body(mut self, body: MessageBody) -> MessageBuilder<Full> {
-        self.body = Some(body);
+    pub fn body(self, body: MessageBody) -> MessageBuilder<Full> {
+        let Self { sender, time, .. } = self;
 
         MessageBuilder {
-            sender: self.sender,
-            time: self.time,
-            body: self.body,
+            sender,
+            time,
+            body: Some(body),
 
             _state: Default::default(),
         }
