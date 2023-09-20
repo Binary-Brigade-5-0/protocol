@@ -5,10 +5,7 @@ use uuid::Uuid;
 
 use crate::message::model::client;
 
-use super::{
-    reader::{ReaderHalf, ReaderHalfBuilder},
-    writer::{WriterHalf, WriterHalfBuilder},
-};
+use super::{reader::ReaderHalf, writer::WriterHalf};
 
 pub struct Client {
     id: Uuid,
@@ -46,7 +43,7 @@ impl Channels {
 }
 
 impl Client {
-    pub fn new(reader: SplitStream<WebSocket>, writer: SplitSink<WebSocket, Message>) -> Self {
+    pub fn new((writer, reader): (SplitSink<WebSocket, Message>, SplitStream<WebSocket>)) -> Self {
         let id = Uuid::new_v4();
         Self { id, reader, writer }
     }

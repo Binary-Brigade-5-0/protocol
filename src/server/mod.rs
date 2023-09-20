@@ -92,26 +92,26 @@ impl TaskSpawner {
     #[tracing::instrument(skip_all)]
     pub async fn spawn_client(self: Arc<Self>, ws: WebSocket) {
         let channels = self.channels.clone();
-        let (writer, reader) = ws.split();
-        let client = client::Client::new(reader, writer);
+        let client = Client::new(ws.split());
+
+        tracing::info!("client {} connected", client.id());
+        self.mailbox.add_client(client.id());
+
+        let mesg = Message::builder()
+            .body(MessageBody::Connected(client.id()))
+            .build();
+
         let client_id = client.id();
-
-        tracing::info!("client {client_id} connected");
-        self.mailbox.add_client(client_id);
-
-        let mesg = Message::builder().body(MessageBody::Response {
-            target: client_id,
-            body: "".into(),
-        });
-        let mesg = mesg.build();
-
         let (rhalf, mut whalf) = client.create_handles(channels);
-        let _ = whalf.write(mesg).await;
 
-        let future_1 = tokio::spawn(rhalf.spawn_reader());
-        let future_2 = tokio::spawn(whalf.spawn_writer());
+        if let Err(sink_error) = whalf.write(mesg).await {
+            tracing::warn!(%sink_error);
+        }
 
-        let (r1, r2) = tokio::join!(future_1, future_2);
+        let reader = tokio::spawn(rhalf.spawn_reader());
+        let writer = tokio::spawn(whalf.spawn_writer());
+
+        let (r1, r2) = tokio::join!(reader, writer);
 
         if let Err(err) = r1.and(r2) {
             tracing::error!(task_join_error=%err);
