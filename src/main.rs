@@ -38,9 +38,9 @@ async fn checkhealth() -> Json<serde_json::Value> {
 
 async fn socket_handler(
     websocket: WebSocketUpgrade,
-    State(channels): State<Arc<server::TaskSpawner>>,
+    State(spawner): State<Arc<server::TaskSpawner>>,
 ) -> Response {
-    websocket.on_upgrade(move |ws| channels.spawn_client(ws))
+    websocket.on_upgrade(move |ws| spawner.spawn_client(ws))
 }
 
 #[tokio::main]
