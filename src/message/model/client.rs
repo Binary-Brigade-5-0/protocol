@@ -7,7 +7,7 @@ use uuid::Uuid;
 use super::{Post, PostHeader as Pheader};
 
 pub trait BuilderState {}
-pub struct Full;
+pub struct Full(MessageBody);
 pub struct Partial;
 
 impl BuilderState for Full {}
@@ -40,7 +40,7 @@ pub struct Message {
 pub struct MessageBuilder<T: BuilderState> {
     sender: Uuid,
     time: SystemTime,
-    body: Option<MessageBody>,
+    body: T,
 
     _state: std::marker::PhantomData<T>,
 }
@@ -64,7 +64,7 @@ impl Message {
         MessageBuilder {
             sender: Uuid::nil(),
             time: SystemTime::now(),
-            body: None,
+            body: Partial,
 
             _state: Default::default(),
         }
@@ -83,7 +83,7 @@ impl<T: BuilderState> MessageBuilder<T> {
         MessageBuilder {
             sender,
             time,
-            body: Some(body),
+            body: Full(body),
 
             _state: Default::default(),
         }
@@ -99,9 +99,8 @@ impl MessageBuilder<Full> {
     pub fn build(self) -> Message {
         Message {
             time: self.time.into(),
-            body: self.body.unwrap(),
-
             sender: self.sender,
+            body: self.body.0,
         }
     }
 }
