@@ -41,8 +41,6 @@ pub struct MessageBuilder<T: BuilderState> {
     sender: Uuid,
     time: SystemTime,
     body: T,
-
-    _state: std::marker::PhantomData<T>,
 }
 
 impl Message {
@@ -65,16 +63,17 @@ impl Message {
             sender: Uuid::nil(),
             time: SystemTime::now(),
             body: Partial,
-
-            _state: Default::default(),
         }
     }
 }
 
 impl<T: BuilderState> MessageBuilder<T> {
-    pub fn sender(&mut self, uuid: Uuid) -> &mut Self {
-        self.sender = uuid;
-        self
+    pub fn sender(self, sender: Uuid) -> Self {
+        Self { sender, ..self }
+    }
+
+    pub fn time(self, time: SystemTime) -> Self {
+        Self { time, ..self }
     }
 
     pub fn body(self, body: MessageBody) -> MessageBuilder<Full> {
@@ -84,23 +83,16 @@ impl<T: BuilderState> MessageBuilder<T> {
             sender,
             time,
             body: Full(body),
-
-            _state: Default::default(),
         }
-    }
-
-    pub fn time(&mut self, time: SystemTime) -> &mut Self {
-        self.time = time;
-        self
     }
 }
 
 impl MessageBuilder<Full> {
     pub fn build(self) -> Message {
-        Message {
-            time: self.time.into(),
-            sender: self.sender,
-            body: self.body.0,
-        }
+        let Self { sender, time, body } = self;
+        let time = time.into();
+        let Full(body) = body;
+
+        Message { sender, time, body }
     }
 }
