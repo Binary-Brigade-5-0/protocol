@@ -1,8 +1,9 @@
+pub mod mailbox;
 pub mod message;
 pub mod server;
+pub mod settings;
 
 use std::{
-    net::SocketAddr,
     sync::{Arc, OnceLock},
     time::SystemTime,
 };
@@ -47,14 +48,10 @@ async fn socket_handler(
 async fn main() -> anyhow::Result<()> {
     START_TIME.get_or_init(SystemTime::now);
 
+    let sock_addr = settings::Settings::instance().addr();
     let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new(
         cfg!(debug_assertions).then_some("trace").unwrap_or("info"),
     ));
-
-    let sock_addr = std::env::args()
-        .nth(1)
-        .map(|s| s.parse())
-        .unwrap_or_else(|| Ok(SocketAddr::from(([0u8; 4], 3000))))?;
 
     let slog_builder = tracing_subscriber::fmt()
         .with_span_events(FmtSpan::ENTER | FmtSpan::EXIT)
@@ -81,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/proto/v1", routing::get(socket_handler))
         .with_state(spawner);
 
-    let server = axum::Server::bind(&sock_addr).serve(app.into_make_service());
+    let server = axum::Server::bind(sock_addr).serve(app.into_make_service());
 
     tracing::info!("server starting on address: {sock_addr}");
 
