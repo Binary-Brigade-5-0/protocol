@@ -73,7 +73,12 @@ async fn main() -> anyhow::Result<()> {
         anyhow::bail!("could not retreive task spawner because it was already removed");
     };
 
+    let user_service = Router::new()
+        .route("/login", routing::get(|| async { "" }))
+        .route("/register", routing::post(|| async { "" }));
+
     let app = Router::new()
+        .nest("/user", user_service)
         .route("/api/checkhealth", routing::get(checkhealth))
         .route("/proto/v1", routing::get(socket_handler))
         .with_state(spawner);
