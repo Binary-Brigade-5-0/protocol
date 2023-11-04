@@ -8,9 +8,9 @@ use axum::extract::ws::WebSocket;
 use futures::StreamExt;
 use tokio::sync::{broadcast, mpsc};
 
-use crate::message::{
-    model::client::{Message, MessageBody},
-    MailBox, Sender,
+use crate::{
+    mailbox::duplex::{DuplexMailbox, MailboxWriter},
+    message::model::client::{Message, MessageBody},
 };
 
 use client::{Channels, Client};
@@ -21,19 +21,18 @@ pub struct Server {
     broadcast_tx: broadcast::Sender<Message>,
     channels: Option<Channels>,
 
-    mailbox: MailBox<Sender>,
+    mailbox: MailboxWriter,
 }
 
 #[cfg_attr(debug_assertions, allow(dead_code))]
 pub struct TaskSpawner {
     channels: Channels,
-    mailbox: MailBox<Sender>,
 }
 
 impl Server {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        let mailbox = MailBox::instance();
+        let mailbox = DuplexMailbox::mailbox_writer();
         let (client_tx, client_rx) = mpsc::unbounded_channel();
         let (broadcast_tx, broadcast_rx) = broadcast::channel(128);
 
@@ -52,8 +51,7 @@ impl Server {
 
     pub fn task_spawner(&mut self) -> Option<Arc<TaskSpawner>> {
         let channels = self.channels.take()?;
-        let mailbox = MailBox::instance();
-        let task_spawner = TaskSpawner { channels, mailbox };
+        let task_spawner = TaskSpawner { channels };
         let task_spawner = Arc::new(task_spawner);
 
         Some(task_spawner)
@@ -77,13 +75,13 @@ impl Server {
                     MessageBody::Post       { target, .. }
                     | MessageBody::Response { target, .. }
                     | MessageBody::Get      { target, .. }
-                    => if let Err(e) = self.mailbox.send(*target, mesg).await {
+                    => if let Err(e) = self.mailbox.send(*target, mesg) {
                         tracing::error!(mailbox_sender_error=%e);
                     },
 
                     mbody @ MessageBody::Error { criminal, .. } if mesg.sender().is_nil() => {
                         let mesg = Message::builder().body(mbody.clone()).build();
-                        let _ = self.mailbox.send(*criminal, mesg).await;
+                        let _ = self.mailbox.send(*criminal, mesg);
                     },
 
                     _ => {
@@ -92,7 +90,7 @@ impl Server {
                             .body(MessageBody::Error { criminal: *mesg.sender(), error: "un-supported client side message".into() })
                             .build();
 
-                        let _ = self.mailbox.send(*mesg.sender(), error).await;
+                        let _ = self.mailbox.send(*mesg.sender(), error);
                     }
                 }
             },
@@ -108,14 +106,14 @@ impl TaskSpawner {
         let client = Client::new(ws.split());
 
         tracing::info!("client {} connected", client.id());
-        self.mailbox.add_client(client.id());
+        let client_reader = DuplexMailbox::instance().add_client(client.id()).unwrap();
 
         let mesg = Message::builder()
             .body(MessageBody::Connected(client.id()))
             .build();
 
         let client_id = client.id();
-        let (rhalf, mut whalf) = client.create_handles(channels);
+        let (rhalf, mut whalf) = client.create_handles(channels, client_reader);
 
         if let Err(sink_error) = whalf.write(mesg).await {
             tracing::warn!(%sink_error);

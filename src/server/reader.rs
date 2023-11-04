@@ -4,9 +4,9 @@ use tokio::sync::mpsc;
 use typed_builder::TypedBuilder;
 use uuid::Uuid;
 
-use crate::message::{
-    model::client::{Message, MessageBody},
-    MailBox, Receiver,
+use crate::{
+    mailbox::duplex::MailboxReader,
+    message::model::client::{Message, MessageBody},
 };
 
 use super::client::Channels;
@@ -19,9 +19,7 @@ pub struct ReaderHalf {
     stream: SplitStream<WebSocket>,
     writer_tx: mpsc::UnboundedSender<Message>,
     channels: Channels,
-
-    #[builder(setter(skip), default = crate::message::MailBox::instance())]
-    mailbox: MailBox<Receiver>,
+    mailbox_reader: MailboxReader,
 }
 
 impl ReaderHalf {
@@ -59,10 +57,14 @@ impl ReaderHalf {
                 Some(Err(ws_err)) => { tracing::error!(websocket_error=%ws_err); break },
                 None => break,
             },
+            Some(mesg) = self.mailbox_reader.recv() => if let Err(err) = self.writer_tx.send(mesg) {
+                tracing::error!(writer_tx_err=%err);
+            }
+            ,
 
-            Some(mesg) = self.mailbox.recv(self.id) => if let Err(err) = self.writer_tx.send(mesg) {
-                tracing::error!(writer_tx_error=%err);
-            },
+            // Some(mesg) = self.mailbox.recv(self.id) => if let Err(err) = self.writer_tx.send(mesg) {
+            //     tracing::error!(writer_tx_error=%err);
+            // },
 
             broadcast = self.channels.get_broadcast() => match broadcast {
                 Err(err) => tracing::warn!(broadcast_receive_error=%err),

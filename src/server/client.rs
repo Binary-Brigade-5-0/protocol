@@ -3,7 +3,7 @@ use futures::stream::{SplitSink, SplitStream};
 use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
 
-use crate::message::model::client;
+use crate::{mailbox::duplex::MailboxReader, message::model::client};
 
 use super::{reader::ReaderHalf, writer::WriterHalf};
 
@@ -48,13 +48,18 @@ impl Client {
         Self { id, reader, writer }
     }
 
-    pub fn create_handles(self, channels: Channels) -> (ReaderHalf, WriterHalf) {
+    pub fn create_handles(
+        self,
+        channels: Channels,
+        mbox_reader: MailboxReader,
+    ) -> (ReaderHalf, WriterHalf) {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let rhalf = ReaderHalf::builder()
             .id(self.id)
             .stream(self.reader)
             .channels(channels)
+            .mailbox_reader(mbox_reader)
             .writer_tx(tx);
 
         let whalf = WriterHalf::builder().id(self.id).sink(self.writer).rx(rx);
