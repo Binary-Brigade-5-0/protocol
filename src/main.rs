@@ -1,54 +1,16 @@
+pub mod app;
 pub mod mailbox;
 pub mod message;
 pub mod server;
 pub mod settings;
 
-use std::{
-    sync::{Arc, OnceLock},
-    time::SystemTime,
-};
-
-use axum::{
-    extract::{State, WebSocketUpgrade},
-    response::Response,
-    routing, Json, Router,
-};
-use chrono::{DateTime, Utc};
-use server::Server;
+use app::Application;
 use tracing_subscriber::{fmt::format::FmtSpan, EnvFilter};
-
-pub static START_TIME: OnceLock<SystemTime> = OnceLock::new();
-
-#[tracing::instrument]
-async fn checkhealth() -> Json<serde_json::Value> {
-    let Some(start_time) = START_TIME.get() else {
-        return Json(serde_json::json!({ "status": "failure" }));
-    };
-
-    let uptime = SystemTime::now().duration_since(*start_time).unwrap();
-    let start_time = DateTime::<Utc>::from(*start_time);
-
-    let json = serde_json::json!({
-        "status": "ok",
-        "uptime": uptime,
-        "started": start_time,
-    });
-
-    Json(json)
-}
-
-async fn socket_handler(
-    websocket: WebSocketUpgrade,
-    State(spawner): State<Arc<server::TaskSpawner>>,
-) -> Response {
-    websocket.on_upgrade(move |ws| spawner.spawn_client(ws))
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    START_TIME.get_or_init(SystemTime::now);
-
     let sock_addr = settings::Settings::instance().addr();
+
     let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new(
         cfg!(debug_assertions).then_some("trace").unwrap_or("info"),
     ));
@@ -67,29 +29,8 @@ async fn main() -> anyhow::Result<()> {
 
     slog_builder.init();
 
-    let mut mesg_server = Server::new();
+    let server = Application::new()?;
 
-    let Some(spawner) = mesg_server.task_spawner() else {
-        anyhow::bail!("could not retreive task spawner because it was already removed");
-    };
-
-    let user_service = Router::new()
-        .route("/login", routing::get(|| async { "" }))
-        .route("/register", routing::post(|| async { "" }));
-
-    let app = Router::new()
-        .nest("/user", user_service)
-        .route("/api/checkhealth", routing::get(checkhealth))
-        .route("/proto/v1", routing::get(socket_handler))
-        .with_state(spawner);
-
-    let server = axum::Server::bind(sock_addr).serve(app.into_make_service());
-
-    tracing::info!("server starting on address: {sock_addr}");
-
-    let m_fut = tokio::spawn(mesg_server.spawn_server());
-    let s_fut = tokio::spawn(server);
-
-    let (result, _) = tokio::join!(m_fut, s_fut,);
-    Ok(result?)
+    tracing::info!("starting server at: {sock_addr}");
+    server.bind(*sock_addr).await
 }

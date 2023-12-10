@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::OnceLock};
+use std::{net::SocketAddr, sync::OnceLock, time::SystemTime};
 
 static SETTINGS: OnceLock<Settings> = OnceLock::new();
 
@@ -6,11 +6,12 @@ static SETTINGS: OnceLock<Settings> = OnceLock::new();
 pub struct Settings {
     addr: SocketAddr,
     dmap_capacity: usize,
+    start_time: SystemTime,
 }
 
 #[allow(unused, dead_code)]
 impl Settings {
-    const HELP_STRING: &str = r#"
+    const HELP_STRING: &'static str = r#"
 usage: etron [arguments]
 
 arguments:
@@ -39,6 +40,7 @@ arguments:
         Ok(Self {
             addr,
             dmap_capacity,
+            start_time: SystemTime::now(),
         })
     }
 
@@ -61,5 +63,9 @@ impl Settings {
 
     pub fn dmap_capacity(&self) -> usize {
         self.dmap_capacity
+    }
+
+    pub fn start_time(&self) -> SystemTime {
+        self.start_time
     }
 }
