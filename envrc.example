@@ -1,0 +1,3 @@
+#vim:ft=direnv
+
+export POSTGRES_URI=
