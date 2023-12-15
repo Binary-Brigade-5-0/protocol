@@ -7,6 +7,7 @@ pub struct Settings {
     addr: SocketAddr,
     dmap_capacity: usize,
     start_time: SystemTime,
+    pg_uri: String,
 }
 
 #[allow(unused, dead_code)]
@@ -27,9 +28,14 @@ arguments:
 
     pub fn try_from_env() -> Result<Self, pico_args::Error> {
         let mut pargs = pico_args::Arguments::from_env();
+
         let addr = pargs
             .opt_value_from_str(["-a", "--addr"])?
             .unwrap_or(SocketAddr::from(([0u8; 4], 3000)));
+
+        let pg_uri = pargs
+            .opt_value_from_str(["-p", "--postgres"])?
+            .unwrap_or(env!("DATABASE_URL").to_string());
 
         let dmap_capacity = pargs.opt_value_from_str("--cap")?.unwrap_or(1024);
 
@@ -38,6 +44,7 @@ arguments:
         }
 
         Ok(Self {
+            pg_uri,
             addr,
             dmap_capacity,
             start_time: SystemTime::now(),
@@ -67,5 +74,9 @@ impl Settings {
 
     pub fn start_time(&self) -> SystemTime {
         self.start_time
+    }
+
+    pub fn pg_uri(&self) -> &str {
+        self.pg_uri.as_str()
     }
 }

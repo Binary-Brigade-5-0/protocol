@@ -3,12 +3,18 @@ use std::time::SystemTime;
 
 use axum::{routing, Json, Router};
 use chrono::{DateTime, Utc};
+use sqlx::PgPool;
 use tokio::net::TcpListener;
 
 use crate::{server, settings::Settings};
 
 pub mod auth;
+pub mod error;
 pub mod proto;
+
+pub struct AppExtensions {
+    pub pg_conn: PgPool,
+}
 
 pub struct Application {
     router: Router,
@@ -16,13 +22,16 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new(ext: AppExtensions) -> anyhow::Result<Self> {
+        let AppExtensions { pg_conn } = ext;
+
         let router = Router::new();
         let mut server = server::Server::new();
 
         let task_spawner = server.task_spawner().unwrap();
         let router = router
             .nest("/proto", proto::router(task_spawner))
+            .nest("/auth", auth::router(pg_conn))
             .route("/checkhealth", routing::get(checkhealth));
 
         Ok(Self { router, server })
