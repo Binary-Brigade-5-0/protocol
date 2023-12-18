@@ -1,3 +1,5 @@
+use std::time::SystemTimeError;
+
 use axum::{http::StatusCode, response::IntoResponse};
 
 #[derive(thiserror::Error)]
@@ -9,6 +11,9 @@ pub enum AppError {
     BaseError(String),
     #[error("JWT Error: {0}")]
     JWTError(#[from] jsonwebtoken::errors::Error),
+
+    #[error("invlalid time stamp: {0}")]
+    TimeError(#[from] SystemTimeError),
 
     #[error("invalid username or password")]
     InvalidCredentials,
@@ -26,6 +31,7 @@ impl IntoResponse for AppError {
             Self::BaseError(err) => err,
             Self::SqlError(err) => err.to_string(),
             Self::JWTError(err) => err.to_string(),
+            Self::TimeError(err) => err.to_string(),
 
             Self::InvalidCredentials => {
                 return (StatusCode::UNAUTHORIZED, format!("{self}")).into_response()

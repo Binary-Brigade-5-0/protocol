@@ -28,3 +28,7 @@ tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 typed-builder = "0.16.0"
 uuid = { version = "1.4.1", features = ["serde", "v4", "fast-rng"] }
+
+[build-dependencies]
+rand = "0.8.5"
+rand_chacha = "0.3.1"

@@ -1,4 +1,4 @@
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{Extension, Json};
 use jsonwebtoken::{EncodingKey, Header};
@@ -9,6 +9,7 @@ use crate::app::error::AppError;
 
 use super::{Claims, UserInfo, PTPDS_SECRET_ENCODE};
 
+#[tracing::instrument]
 #[cfg_attr(debug_assertions, axum_macros::debug_handler)]
 pub(super) async fn login_user(
     Extension(pg_pool): Extension<PgPool>,
@@ -28,12 +29,13 @@ pub(super) async fn login_user(
     let claims = Claims {
         userid,
         logged: logged.into(),
+        exp: (logged.duration_since(UNIX_EPOCH).unwrap() + super::EXPIRY_TIME_HOURS).as_secs(),
     };
 
     let token = jsonwebtoken::encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(PTPDS_SECRET_ENCODE.as_bytes()),
+        &EncodingKey::from_secret(PTPDS_SECRET_ENCODE),
     )?;
 
     Ok(token)

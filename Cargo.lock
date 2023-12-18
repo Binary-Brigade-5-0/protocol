@@ -509,6 +509,8 @@ dependencies = [
  "futures",
  "jsonwebtoken",
  "pico-args",
+ "rand",
+ "rand_chacha",
  "serde",
  "serde_json",
  "sqlx",

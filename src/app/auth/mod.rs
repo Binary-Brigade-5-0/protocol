@@ -10,8 +10,12 @@ mod delete;
 mod login;
 mod register;
 
-pub const PTPDS_SECRET_ENCODE: &str = "ptpds-secret";
-pub const PTPDS_SECRET_DECODE: &str = "ptpds-secret";
+pub mod middleware;
+
+pub const PTPDS_SECRET_ENCODE: &[u8; 1024] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/jwt-key.out"));
+pub const PTPDS_SECRET_DECODE: &[u8; 1024] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/jwt-key.out"));
 
 // expiry time for the jwt, defaulted to a week
 pub const EXPIRY_TIME_HOURS: Duration = Duration::from_secs(168 * 60 * 60);
@@ -29,12 +33,15 @@ pub struct UserInfo {
 pub(super) struct Claims {
     userid: Uuid,
     logged: DateTime<Utc>,
+    exp: u64,
 }
 
 pub fn router(db: PgPool) -> Router {
+    tracing::info!(?PTPDS_SECRET_DECODE, ?PTPDS_SECRET_ENCODE);
+
     Router::new()
         .route("/login", routing::get(login::login_user))
         .route("/register", routing::post(register::register_user))
-        .route("/delete", routing::delete(|| async { "delete" }))
+        .route("/delete", routing::delete(delete::delete_user))
         .layer(Extension(db))
 }
