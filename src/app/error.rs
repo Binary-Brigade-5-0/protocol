@@ -1,6 +1,7 @@
 use std::time::SystemTimeError;
 
 use axum::{http::StatusCode, response::IntoResponse};
+use jsonwebtoken::errors::ErrorKind;
 
 #[derive(thiserror::Error)]
 #[derive(Debug)]
@@ -30,11 +31,18 @@ impl IntoResponse for AppError {
         let err = match self {
             Self::BaseError(err) => err,
             Self::SqlError(err) => err.to_string(),
-            Self::JWTError(err) => err.to_string(),
             Self::TimeError(err) => err.to_string(),
 
             Self::InvalidCredentials => {
                 return (StatusCode::UNAUTHORIZED, format!("{self}")).into_response()
+            },
+
+            Self::JWTError(err) => {
+                if let ErrorKind::ExpiredSignature = err.kind() {
+                    return (StatusCode::UNAUTHORIZED, format!("{err}")).into_response();
+                } else {
+                    err.to_string()
+                }
             },
         };
 
