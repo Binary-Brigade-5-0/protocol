@@ -16,12 +16,18 @@ impl Settings {
 usage: etron [arguments]
 
 arguments:
-    -a --address  <socket address> set the socket address for the server
+    -a --address  <socket address>  set the socket address for the server
                   default: 127.0.0.1:3000
+
+       --cap      <buffer capacity> set the mailbox buffer initial capacity
+                  default: 1024(release) 0(debug)
+
+    -p --postgres <postgres url>   set the postgres connection string
+                  default: env:DATABASE_URL
 "#;
 
     /// Gets a static instance of the settings variable from std::env::args,
-    /// PANICKS: exits with exit_code 1 if the arguments cannot be parsed
+    /// PANICS: exits with exit_code 1 if the arguments cannot be parsed
     pub fn instance() -> &'static Self {
         SETTINGS.get_or_init(Self::from_env)
     }
@@ -39,8 +45,10 @@ arguments:
 
         let dmap_capacity = pargs.opt_value_from_str("--cap")?.unwrap_or(1024);
 
-        for argument in pargs.finish() {
-            eprintln!("warning: unknown argument: {argument:?}");
+        if let Some(next) = pargs.finish().iter().next() {
+            Err(pico_args::Error::ArgumentParsingFailed {
+                cause: format!("Unknown argument: {next}", next = next.to_str().unwrap()),
+            })?;
         }
 
         Ok(Self {
