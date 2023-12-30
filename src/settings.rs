@@ -10,9 +10,7 @@ pub struct Settings {
     pg_uri: String,
 }
 
-#[allow(unused, dead_code)]
-impl Settings {
-    const HELP_STRING: &'static str = r#"
+const HELP_STRING: &str = r#"
 usage: etron [arguments]
 
 arguments:
@@ -26,29 +24,32 @@ arguments:
                   default: env:DATABASE_URL
 "#;
 
+#[allow(unused, dead_code)]
+impl Settings {
     /// Gets a static instance of the settings variable from std::env::args,
     /// PANICS: exits with exit_code 1 if the arguments cannot be parsed
     pub fn instance() -> &'static Self {
         SETTINGS.get_or_init(Self::from_env)
     }
 
-    pub fn try_from_env() -> Result<Self, pico_args::Error> {
+    pub fn try_from_env() -> anyhow::Result<Self> {
         let mut pargs = pico_args::Arguments::from_env();
 
         let addr = pargs
             .opt_value_from_str(["-a", "--addr"])?
             .unwrap_or(SocketAddr::from(([0u8; 4], 3000)));
 
-        let pg_uri = pargs
+        let Some(pg_uri) = pargs
             .opt_value_from_str(["-p", "--postgres"])?
-            .unwrap_or(env!("DATABASE_URL").to_string());
+            .or(std::env::var("DATABASE_URL").ok())
+        else {
+            anyhow::bail!("missing postgres url...\n{HELP_STRING}");
+        };
 
         let dmap_capacity = pargs.opt_value_from_str("--cap")?.unwrap_or(1024);
 
-        if let Some(next) = pargs.finish().iter().next() {
-            Err(pico_args::Error::ArgumentParsingFailed {
-                cause: format!("Unknown argument: {next}", next = next.to_str().unwrap()),
-            })?;
+        if let Some(next) = pargs.finish().first() {
+            anyhow::bail!("unknown argument: {}", next.to_str().unwrap());
         }
 
         Ok(Self {
@@ -63,7 +64,7 @@ arguments:
         match Self::try_from_env() {
             Ok(settings) => settings,
             Err(error) => {
-                eprint!("error: {error}{}", Self::HELP_STRING);
+                eprint!("error: {error}{HELP_STRING}");
                 std::process::exit(1);
             },
         }
