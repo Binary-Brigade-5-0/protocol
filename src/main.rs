@@ -14,9 +14,9 @@ async fn main() -> anyhow::Result<()> {
     let pg_conn = PgPool::connect(settings::Settings::instance().pg_uri()).await?;
     sqlx::migrate!("./migrations").run(&pg_conn).await?;
 
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new(
-        cfg!(debug_assertions).then_some("trace").unwrap_or("info"),
-    ));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new(cfg!(debug_assertions).then_some("trace").unwrap_or("info"))
+    });
 
     let slog_builder = tracing_subscriber::fmt()
         .with_span_events(FmtSpan::ENTER | FmtSpan::EXIT)
